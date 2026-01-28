@@ -166,3 +166,7 @@ virtualenv/
 scratch/
 
 .langgraph_api/
+
+# WindsurfChatOpen
+.windsurfchatopen/
+.windsurfrules
