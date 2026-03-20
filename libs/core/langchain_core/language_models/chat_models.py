@@ -214,7 +214,7 @@ async def agenerate_from_stream(
     """Async generate from a stream.
 
     Args:
-        stream: Iterator of `ChatGenerationChunk`.
+        stream: AsyncIterator of `ChatGenerationChunk`.
 
     Returns:
         Chat result.
@@ -310,7 +310,7 @@ class BaseChatModel(BaseLanguageModel[AIMessage], ABC):
     - If `False` (Default), will always use streaming case if available.
 
     The main reason for this flag is that code might be written using `stream` and
-    a user may want to swap out a given model for another model whose the implementation
+    a user may want to swap out a given model for another model whose implementation
     does not properly support streaming.
     """
 
@@ -504,8 +504,9 @@ class BaseChatModel(BaseLanguageModel[AIMessage], ABC):
             params = self._get_invocation_params(stop=stop, **kwargs)
             options = {"stop": stop, **kwargs, **ls_structured_output_format_dict}
             inheritable_metadata = {
+                **self._get_metadata_invocation_params(params),
                 **(config.get("metadata") or {}),
-                **self._get_ls_params(stop=stop, **kwargs),
+                **self._get_ls_params_with_defaults(stop=stop, **kwargs),
             }
             callback_manager = CallbackManager.configure(
                 config.get("callbacks"),
@@ -632,8 +633,9 @@ class BaseChatModel(BaseLanguageModel[AIMessage], ABC):
         params = self._get_invocation_params(stop=stop, **kwargs)
         options = {"stop": stop, **kwargs, **ls_structured_output_format_dict}
         inheritable_metadata = {
+            **self._get_metadata_invocation_params(params),
             **(config.get("metadata") or {}),
-            **self._get_ls_params(stop=stop, **kwargs),
+            **self._get_ls_params_with_defaults(stop=stop, **kwargs),
         }
         callback_manager = AsyncCallbackManager.configure(
             config.get("callbacks"),
@@ -785,6 +787,18 @@ class BaseChatModel(BaseLanguageModel[AIMessage], ABC):
         params["stop"] = stop
         return {**params, **kwargs}
 
+    def _get_metadata_invocation_params(
+        self,
+        invocation_params: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Filter invocation params for inclusion in run metadata."""
+        secret_keys = set(self.lc_secrets.keys())
+        return {
+            k: v
+            for k, v in invocation_params.items()
+            if v is not None and k not in secret_keys and k != "tools"
+        }
+
     def _get_ls_params(
         self,
         stop: list[str] | None = None,
@@ -812,9 +826,11 @@ class BaseChatModel(BaseLanguageModel[AIMessage], ABC):
             ls_params["ls_model_name"] = self.model_name
 
         # temperature
-        if "temperature" in kwargs and isinstance(kwargs["temperature"], float):
+        if "temperature" in kwargs and isinstance(kwargs["temperature"], (int, float)):
             ls_params["ls_temperature"] = kwargs["temperature"]
-        elif hasattr(self, "temperature") and isinstance(self.temperature, float):
+        elif hasattr(self, "temperature") and isinstance(
+            self.temperature, (int, float)
+        ):
             ls_params["ls_temperature"] = self.temperature
 
         # max_tokens
@@ -823,6 +839,16 @@ class BaseChatModel(BaseLanguageModel[AIMessage], ABC):
         elif hasattr(self, "max_tokens") and isinstance(self.max_tokens, int):
             ls_params["ls_max_tokens"] = self.max_tokens
 
+        return ls_params
+
+    def _get_ls_params_with_defaults(
+        self,
+        stop: list[str] | None = None,
+        **kwargs: Any,
+    ) -> LangSmithParams:
+        """Wrap _get_ls_params to always include ls_integration."""
+        ls_params = self._get_ls_params(stop=stop, **kwargs)
+        ls_params["ls_integration"] = "langchain_chat_model"
         return ls_params
 
     def _get_llm_string(self, stop: list[str] | None = None, **kwargs: Any) -> str:
@@ -896,8 +922,9 @@ class BaseChatModel(BaseLanguageModel[AIMessage], ABC):
         params = self._get_invocation_params(stop=stop, **kwargs)
         options = {"stop": stop, **ls_structured_output_format_dict}
         inheritable_metadata = {
+            **self._get_metadata_invocation_params(params),
             **(metadata or {}),
-            **self._get_ls_params(stop=stop, **kwargs),
+            **self._get_ls_params_with_defaults(stop=stop, **kwargs),
         }
 
         callback_manager = CallbackManager.configure(
@@ -1019,8 +1046,9 @@ class BaseChatModel(BaseLanguageModel[AIMessage], ABC):
         params = self._get_invocation_params(stop=stop, **kwargs)
         options = {"stop": stop, **ls_structured_output_format_dict}
         inheritable_metadata = {
+            **self._get_metadata_invocation_params(params),
             **(metadata or {}),
-            **self._get_ls_params(stop=stop, **kwargs),
+            **self._get_ls_params_with_defaults(stop=stop, **kwargs),
         }
 
         callback_manager = AsyncCallbackManager.configure(
